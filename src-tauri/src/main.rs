@@ -6,6 +6,15 @@
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
+use rusqlite::{Connection, Result};
+
+fn create_db(db_path: &str) -> Result<Connection> {
+  let conn = Connection::open(db_path)?;
+
+  conn.execute("CREATE TABLE log (entry TEXT)", [])?;
+
+  Ok(conn)
+}
 
 fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
 where
@@ -18,8 +27,15 @@ where
 #[tauri::command]
 fn parse_file(file_path: String) -> Result<(), String> {
   let context = tauri::generate_context!();
-  let app_name = context.config().package.product_name.as_ref().ok_or("Failed to get app name.")?;
-  let file_stem = Path::new(&file_path).file_stem().ok_or("Invalid file path.")?;
+  let app_name = context
+    .config()
+    .package
+    .product_name
+    .as_ref()
+    .ok_or("Failed to get app name.")?;
+  let file_stem = Path::new(&file_path)
+    .file_stem()
+    .ok_or("Invalid file path.")?;
   let mut db_path = tauri::api::path::data_dir().unwrap();
   db_path.push(app_name);
   db_path.push(file_stem);
