@@ -19,6 +19,8 @@ serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 tauri = { version = "1.0.0-beta.6", features = ["api-all", "cli"] }
 rusqlite = "0.25.3"
+strum = "0.21"
+strum_macros = "0.21"
 
 [features]
 default = [ "custom-protocol" ]

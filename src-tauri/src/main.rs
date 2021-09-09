@@ -3,10 +3,14 @@
   windows_subsystem = "windows"
 )]
 
-use std::fs::{File, create_dir_all};
+mod store;
+
+use rusqlite::{params, Connection, Result};
+use std::fs::{create_dir_all, File};
 use std::io::{self, BufRead};
 use std::path::Path;
-use rusqlite::{params, Connection, Result};
+use store::{PubData, PubPayload, PubTypes, Store};
+use tauri::{Manager, State};
 
 fn create_db(db_path: &str) -> Result<Connection> {
   let conn = Connection::open(db_path)?;
@@ -17,10 +21,7 @@ fn create_db(db_path: &str) -> Result<Connection> {
 }
 
 fn insert_line(conn: &Connection, entry: String) -> Result<usize> {
-    conn.execute(
-       "INSERT INTO log (entry) VALUES (?1)",
-       params![entry],
-    )
+  conn.execute("INSERT INTO log (entry) VALUES (?1)", params![entry])
 }
 
 fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
@@ -32,7 +33,11 @@ where
 }
 
 #[tauri::command]
-fn parse_file(file_path: String) -> Result<(), String> {
+fn parse_file(
+  file_path: String,
+  app_handle: tauri::AppHandle,
+  state: State<Store>,
+) -> Result<(), String> {
   let context = tauri::generate_context!();
   let app_name = context
     .config()
@@ -46,7 +51,7 @@ fn parse_file(file_path: String) -> Result<(), String> {
   let mut db_path = tauri::api::path::data_dir().unwrap();
   db_path.push(app_name);
   let db_dir_path = db_path.as_path();
-  create_dir_all(db_dir_path);
+  create_dir_all(db_dir_path).expect("Failed to create database directory.");
   db_path.push(file_stem);
   db_path.set_extension("db");
   let db = create_db(db_path.to_str().unwrap()).expect("Failed to open DB");
@@ -57,10 +62,20 @@ fn parse_file(file_path: String) -> Result<(), String> {
   if let Ok(lines) = read_lines(&file_path) {
     for line in lines {
       if let Ok(entry) = line {
-          insert_line(&db, entry);
+        insert_line(&db, entry).expect("Failed to insert log lines");
       }
     }
   }
+
+  app_handle.emit_all(
+    "update",
+    PubPayload {
+      pub_type: PubTypes::Progress,
+      data: PubData::Progress {
+        parsing_percent: 1.0,
+      },
+    },
+  ).expect("Failed to broadcast state update");
 
   Ok(())
 }
@@ -68,6 +83,7 @@ fn parse_file(file_path: String) -> Result<(), String> {
 fn main() {
   tauri::Builder::default()
     .invoke_handler(tauri::generate_handler![parse_file])
+    .manage(Store(Default::default()))
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }
