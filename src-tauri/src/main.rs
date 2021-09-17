@@ -15,6 +15,8 @@ use tauri::{Manager, State};
 fn create_db(db_path: &str) -> Result<Connection> {
   let conn = Connection::open(db_path)?;
 
+  conn.execute("DROP TABLE IF EXISTS log", [])?;
+
   conn.execute("CREATE TABLE log (entry TEXT)", [])?;
 
   Ok(conn)
@@ -68,7 +70,7 @@ fn parse_file(
   }
 
   app_handle.emit_all(
-    "update",
+    "state-update",
     PubPayload {
       pub_type: PubTypes::Progress,
       data: PubData::Progress {
