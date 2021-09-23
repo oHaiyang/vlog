@@ -9,7 +9,7 @@ use rusqlite::{params, Connection, Result};
 use std::fs::{create_dir_all, File};
 use std::io::{self, BufRead};
 use std::path::Path;
-use store::{PubData, PubPayload, PubTypes, Store};
+use store::{Col, PubData, PubPayload, PubTypes, Store};
 use tauri::{Manager, State};
 
 fn create_db(db_path: &str) -> Result<Connection> {
@@ -24,6 +24,23 @@ fn create_db(db_path: &str) -> Result<Connection> {
 
 fn insert_line(conn: &Connection, entry: String) -> Result<usize> {
   conn.execute("INSERT INTO log (entry) VALUES (?1)", params![entry])
+}
+
+fn read_columns(conn: &Connection) -> Result<Vec<Col>> {
+  let mut stmt = conn.prepare("SELECT json_each.key AS key, json_each.type AS type FROM log, json_each(log.entry) group by key, type")?;
+  let mut rows = Vec::new();
+  let rows_iter = stmt.query_map([], |row| {
+    Ok(Col {
+      name: row.get(0)?,
+      data_type: row.get(1)?,
+    })
+  })?;
+
+  for col in rows_iter {
+    rows.push(col?);
+  }
+
+  Ok(rows)
 }
 
 fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
@@ -69,15 +86,29 @@ fn parse_file(
     }
   }
 
-  app_handle.emit_all(
-    "state-update",
-    PubPayload {
-      pub_type: PubTypes::Progress,
-      data: PubData::Progress {
-        parsing_percent: 1.0,
+  app_handle
+    .emit_all(
+      "state-update",
+      PubPayload {
+        pub_type: PubTypes::Progress,
+        data: PubData::Progress {
+          parsing_percent: 1.0,
+        },
       },
-    },
-  ).expect("Failed to broadcast state update");
+    )
+    .expect("Failed to broadcast state update");
+
+  let rows = read_columns(&db).expect("Failed to get column meta");
+
+  app_handle
+    .emit_all(
+      "state-update",
+      PubPayload {
+        pub_type: PubTypes::ColumnMeta,
+        data: PubData::ColumnMeta { cols: rows },
+      },
+    )
+    .expect("Failed to broadcast state update");
 
   Ok(())
 }
