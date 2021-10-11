@@ -27,7 +27,7 @@ fn insert_line(conn: &Connection, entry: String) -> Result<usize> {
 }
 
 fn read_columns(conn: &Connection) -> Result<Vec<Col>> {
-  let mut stmt = conn.prepare("SELECT json_each.key AS key, json_each.type AS type FROM log, json_each(log.entry) group by key, type")?;
+  let mut stmt = conn.prepare("SELECT json_each.key AS key, json_each.type AS type, group_concat(distinct json_each.value) AS vals FROM log, json_each(log.entry) group by key, type;")?;
   let mut rows = Vec::new();
   let rows_iter = stmt.query_map([], |row| {
     Ok(Col {
@@ -51,33 +51,7 @@ where
   Ok(io::BufReader::new(file).lines())
 }
 
-#[tauri::command]
-fn parse_file(
-  file_path: String,
-  app_handle: tauri::AppHandle,
-  state: State<Store>,
-) -> Result<(), String> {
-  let context = tauri::generate_context!();
-  let app_name = context
-    .config()
-    .package
-    .product_name
-    .as_ref()
-    .ok_or("Failed to get app name.")?;
-  let file_stem = Path::new(&file_path)
-    .file_stem()
-    .ok_or("Invalid file path.")?;
-  let mut db_path = tauri::api::path::data_dir().unwrap();
-  db_path.push(app_name);
-  let db_dir_path = db_path.as_path();
-  create_dir_all(db_dir_path).expect("Failed to create database directory.");
-  db_path.push(file_stem);
-  db_path.set_extension("db");
-  let db = create_db(db_path.to_str().unwrap()).expect("Failed to open DB");
-
-  println!("got file_path: {}", file_path);
-  println!("use db_path: {:?}", db_path);
-
+fn write_entires(file_path: &String, db: &Connection, app_handle: &tauri::AppHandle) -> Result<()> {
   if let Ok(lines) = read_lines(&file_path) {
     for line in lines {
       if let Ok(entry) = line {
@@ -98,17 +72,59 @@ fn parse_file(
     )
     .expect("Failed to broadcast state update");
 
-  let rows = read_columns(&db).expect("Failed to get column meta");
+  Ok(())
+}
+
+fn query_and_send_col_meta(db: &Connection, app_handle: &tauri::AppHandle) {
+  let cols = read_columns(&db).expect("Failed to get column meta");
 
   app_handle
     .emit_all(
       "state-update",
       PubPayload {
         pub_type: PubTypes::ColumnMeta,
-        data: PubData::ColumnMeta { cols: rows },
+        data: PubData::ColumnMeta { cols },
       },
     )
     .expect("Failed to broadcast state update");
+}
+
+fn make_db_path(app_name: &String, file_path: &String) -> std::result::Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+  let file_stem = Path::new(&file_path)
+    .file_stem()
+    .ok_or("Invalid file path.")?;
+  let mut db_path = tauri::api::path::data_dir().unwrap();
+  println!("use db_path: {:?}", db_path);
+  db_path.push(app_name);
+  let db_dir_path = db_path.as_path();
+  create_dir_all(db_dir_path).expect("Failed to create database directory.");
+  db_path.push(file_stem);
+  db_path.set_extension("db");
+
+  Ok(db_path)
+}
+
+#[tauri::command]
+fn parse_file(
+  file_path: String,
+  app_handle: tauri::AppHandle,
+  state: State<Store>,
+) -> Result<(), String> {
+  let context = tauri::generate_context!();
+  let app_name = context
+    .config()
+    .package
+    .product_name
+    .as_ref()
+    .ok_or("Failed to get app name.")?;
+
+  println!("got file_path: {}", file_path);
+  let db_path = make_db_path(app_name, &file_path).expect("Failed to make database path.");
+  let db = create_db(db_path.to_str().unwrap()).expect("Failed to open database");
+
+  write_entires(&file_path, &db, &app_handle).expect("Failed to insert entries.");
+  query_and_send_col_meta(&db, &app_handle);
+
 
   Ok(())
 }

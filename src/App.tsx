@@ -47,6 +47,7 @@ function App() {
     Array<[string, File]>
   >([]);
   const { parsing_percent } = subToState('Progress', { parsing_percent: 0 });
+  subToState('ColumnMeta', undefined);
   const [recentMenuOpen, setRecentMenuOpen] = useState(false);
   const handleSelect = useCallback(async () => {
     let filePath = await dialog.open({
