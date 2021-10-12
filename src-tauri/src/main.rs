@@ -6,18 +6,35 @@
 mod store;
 
 use rusqlite::{params, Connection, Result};
+use rusqlite::functions::FunctionFlags;
 use std::fs::{create_dir_all, File};
 use std::io::{self, BufRead};
 use std::path::Path;
 use store::{Col, PubData, PubPayload, PubTypes, Store};
 use tauri::{Manager, State};
+use chrono::prelude::*;
 
+type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
 fn create_db(db_path: &str) -> Result<Connection> {
   let conn = Connection::open(db_path)?;
 
   conn.execute("DROP TABLE IF EXISTS log", [])?;
 
   conn.execute("CREATE TABLE log (entry TEXT)", [])?;
+
+  conn.create_scalar_function(
+        "parse_to_ts",
+        1,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        move |ctx| {
+            assert_eq!(ctx.len(), 1, "called with unexpected number of arguments");
+            let ts = ctx.get_or_create_aux(0, |vr| -> Result<i64, BoxError> {
+                Ok(vr.as_str()?.parse::<DateTime<Utc>>()?.timestamp())
+            })?;
+
+            Ok(ts)
+        },
+    )?;
 
   Ok(conn)
 }
@@ -89,7 +106,7 @@ fn query_and_send_col_meta(db: &Connection, app_handle: &tauri::AppHandle) {
     .expect("Failed to broadcast state update");
 }
 
-fn make_db_path(app_name: &String, file_path: &String) -> std::result::Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+fn make_db_path(app_name: &String, file_path: &String) -> std::result::Result<std::path::PathBuf, BoxError> {
   let file_stem = Path::new(&file_path)
     .file_stem()
     .ok_or("Invalid file path.")?;
