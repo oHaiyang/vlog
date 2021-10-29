@@ -16,6 +16,11 @@ pub struct InnerStore {
 pub struct Col {
   pub name: String,
   pub data_type: String,
+  pub vals: String,
+  pub is_datetime: bool,
+  pub is_json: bool,
+  pub max: f64,
+  pub min: f64,
 }
 
 #[derive(Clone, Display, Debug, serde::Serialize)]

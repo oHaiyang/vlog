@@ -5,14 +5,41 @@
 
 mod store;
 
+use chrono::prelude::*;
+use rusqlite::functions::{Aggregate, Context, FunctionFlags};
 use rusqlite::{params, Connection, Result};
-use rusqlite::functions::FunctionFlags;
 use std::fs::{create_dir_all, File};
 use std::io::{self, BufRead};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use store::{Col, PubData, PubPayload, PubTypes, Store};
 use tauri::{Manager, State};
-use chrono::prelude::*;
+
+struct MayIsDatetime();
+
+impl Aggregate<AtomicBool, bool> for MayIsDatetime {
+  fn init(&self, _ctx: &mut Context<'_>) -> Result<AtomicBool> {
+    Ok(AtomicBool::new(true))
+  }
+
+  fn step(&self, ctx: &mut Context<'_>, is_datetime: &mut AtomicBool) -> Result<()> {
+    let v = ctx.get::<String>(0);
+    let current = is_datetime.load(Ordering::Relaxed);
+    if current
+      && (v.is_err()
+        || (v.is_ok() && v.as_ref().unwrap().parse::<DateTime<Utc>>().is_err())
+        || v.as_ref().unwrap().is_empty())
+    {
+      is_datetime.store(false, Ordering::Relaxed);
+    }
+
+    Ok(())
+  }
+
+  fn finalize(&self, _ctx: &mut Context<'_>, is_datetime: Option<AtomicBool>) -> Result<bool> {
+    Ok(is_datetime.map_or(false, |ab| ab.load(Ordering::Relaxed)))
+  }
+}
 
 type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
 fn create_db(db_path: &str) -> Result<Connection> {
@@ -23,18 +50,30 @@ fn create_db(db_path: &str) -> Result<Connection> {
   conn.execute("CREATE TABLE log (entry TEXT)", [])?;
 
   conn.create_scalar_function(
-        "parse_to_ts",
-        1,
-        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
-        move |ctx| {
-            assert_eq!(ctx.len(), 1, "called with unexpected number of arguments");
-            let ts = ctx.get_or_create_aux(0, |vr| -> Result<i64, BoxError> {
-                Ok(vr.as_str()?.parse::<DateTime<Utc>>()?.timestamp())
-            })?;
+    "parse_to_ts_ify",
+    1,
+    FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+    move |ctx| {
+      assert_eq!(ctx.len(), 1, "called with unexpected number of arguments");
+      let ts = ctx.get_or_create_aux(0, |vr| -> Result<i64, BoxError> {
+        Ok(
+          vr.as_str()?
+            .parse::<DateTime<Utc>>()
+            .map_or(0, |d| d.timestamp()),
+        )
+      })?;
 
-            Ok(ts)
-        },
-    )?;
+      Ok(ts)
+    },
+  )?;
+
+  // parse 下，尝试解析部分字段，看看是不是都是 datetime 类型
+  conn.create_aggregate_function(
+    "may_is_datetime",
+    1,
+    FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+    MayIsDatetime(),
+  )?;
 
   Ok(conn)
 }
@@ -44,12 +83,35 @@ fn insert_line(conn: &Connection, entry: String) -> Result<usize> {
 }
 
 fn read_columns(conn: &Connection) -> Result<Vec<Col>> {
-  let mut stmt = conn.prepare("SELECT json_each.key AS key, json_each.type AS type, group_concat(distinct json_each.value) AS vals FROM log, json_each(log.entry) group by key, type;")?;
+  let mut stmt = conn.prepare(
+        "SELECT json_each.key AS key,
+            json_each.type AS type, 
+            CASE json_each.type WHEN 'text' THEN group_concat(distinct json_each.value) ELSE '' END AS vals,
+            CASE json_each.type WHEN 'array' THEN true WHEN 'object' THEN true ELSE false END AS is_json,
+            CASE json_each.type WHEN 'text' THEN may_is_datetime(json_each.value) ELSE false END AS is_datetime,
+            MAX(CASE json_each.type 
+                WHEN 'real' THEN json_each.value 
+                WHEN 'integer' THEN json_each.value 
+                WHEN 'text' THEN parse_to_ts_ify(json_each.value)
+                ELSE 0 END) AS max_val,
+            MIN(CASE json_each.type 
+                WHEN 'real' THEN json_each.value 
+                WHEN 'integer' THEN json_each.value 
+                WHEN 'text' THEN parse_to_ts_ify(json_each.value)
+                ELSE 0 END) AS min_val
+        FROM log, json_each(log.entry) 
+        GROUP BY key, type;"
+    )?;
   let mut rows = Vec::new();
   let rows_iter = stmt.query_map([], |row| {
     Ok(Col {
       name: row.get(0)?,
       data_type: row.get(1)?,
+      vals: row.get(2)?,
+      is_json: row.get(3)?,
+      is_datetime: row.get(4)?,
+      max: row.get(5)?,
+      min: row.get(6)?,
     })
   })?;
 
