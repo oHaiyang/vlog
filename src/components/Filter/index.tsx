@@ -16,7 +16,7 @@ type FilterProps = {
 
 function Filter(props: FilterProps) {
   const [collapsed, setCollapsed] = useState(true);
-  const cols = useDBState<Array<Col>>('ColumnMeta', []);
+  const { cols } = useDBState<{ cols: Array<Col> }>('ColumnMeta', { cols: [] });
   const toggleCollapsed = useCallback(() => {
     setCollapsed(!collapsed);
   }, [collapsed]);

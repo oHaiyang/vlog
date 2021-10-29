@@ -32,7 +32,12 @@ export function useDBState<T>(pub_key: string, initial_value: T) {
         setState(data[pub_key]);
         console.log('[state-update]', pub_key, event);
       }
-    })
+    });
+
+    (async () => {
+      const data = await invoke<{ [key: string]: T }>('get_state', { pubType: pub_key });
+      setState(data[pub_key]);
+    })();
 
     return () => {
       (async () => { const fn = await unlisten; fn(); })();

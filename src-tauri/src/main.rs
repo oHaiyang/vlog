@@ -59,7 +59,7 @@ fn create_db(db_path: &str) -> Result<Connection> {
         Ok(
           vr.as_str()?
             .parse::<DateTime<Utc>>()
-            .map_or(0, |d| d.timestamp()),
+            .map_or(0, |d| d.timestamp_millis()),
         )
       })?;
 
@@ -139,17 +139,12 @@ fn write_entires(file_path: &String, db: &Connection, app_handle: &tauri::AppHan
     }
   }
 
-  app_handle
-    .emit_all(
-      "state-update",
-      PubPayload {
-        pub_type: PubTypes::Progress,
-        data: PubData::Progress {
-          parsing_percent: 1.0,
-        },
-      },
-    )
-    .expect("Failed to broadcast state update");
+  app_handle.state::<Store>().publish(
+    PubData::Progress {
+      parsing_percent: 1.0,
+    },
+    app_handle,
+  );
 
   Ok(())
 }
@@ -158,17 +153,14 @@ fn query_and_send_col_meta(db: &Connection, app_handle: &tauri::AppHandle) {
   let cols = read_columns(&db).expect("Failed to get column meta");
 
   app_handle
-    .emit_all(
-      "state-update",
-      PubPayload {
-        pub_type: PubTypes::ColumnMeta,
-        data: PubData::ColumnMeta { cols },
-      },
-    )
-    .expect("Failed to broadcast state update");
+    .state::<Store>()
+    .publish(PubData::ColumnMeta { cols }, app_handle);
 }
 
-fn make_db_path(app_name: &String, file_path: &String) -> std::result::Result<std::path::PathBuf, BoxError> {
+fn make_db_path(
+  app_name: &String,
+  file_path: &String,
+) -> std::result::Result<std::path::PathBuf, BoxError> {
   let file_stem = Path::new(&file_path)
     .file_stem()
     .ok_or("Invalid file path.")?;
@@ -204,14 +196,28 @@ fn parse_file(
   write_entires(&file_path, &db, &app_handle).expect("Failed to insert entries.");
   query_and_send_col_meta(&db, &app_handle);
 
-
   Ok(())
 }
 
+#[tauri::command]
+fn get_state(
+  pub_type: PubTypes,
+  state: State<Store>,
+) -> Result<PubData, String> {
+  Ok(state.get(pub_type))
+}
+
 fn main() {
-  tauri::Builder::default()
-    .invoke_handler(tauri::generate_handler![parse_file])
-    .manage(Store(Default::default()))
+  let builder = tauri::Builder::default();
+
+  builder
+    .setup(|app| {
+      app.handle();
+      app.manage(Store::new());
+
+      Ok(())
+    })
+    .invoke_handler(tauri::generate_handler![parse_file, get_state])
     .run(tauri::generate_context!())
-    .expect("error while running tauri application");
+    .expect("Error while running tauri application");
 }

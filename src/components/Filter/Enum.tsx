@@ -86,7 +86,7 @@ function EnumFilter(props: { col: EnumCol, isLoading?: boolean }) {
       onRemove={remove}
       resetOnSelect
       itemRenderer={renderEnumItem(col)}
-      tagRenderer={(text) => text}
+      tagRenderer={(text: string) => text}
       popoverProps={{ minimal: true }}
       itemPredicate={filterEnum}
     />

@@ -1,16 +1,6 @@
-use std::sync::Mutex;
+use std::sync::RwLock;
 use strum_macros::Display;
-
-#[derive(Default, Debug)]
-pub struct InnerStore {
-  pub file_name: String,
-  pub label: String,
-  pub log_names: Vec<String>,
-  pub loading: bool,
-  pub parsing_percent: f32,
-  pub active_log_name: String,
-  pub file_label: String,
-}
+use tauri::{AppHandle, Manager, State};
 
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct Col {
@@ -23,7 +13,7 @@ pub struct Col {
   pub min: f64,
 }
 
-#[derive(Clone, Display, Debug, serde::Serialize)]
+#[derive(Clone, Display, Debug, serde::Serialize, serde::Deserialize)]
 pub enum PubTypes {
   Progress,
   ColumnMeta,
@@ -43,10 +33,63 @@ pub struct PubPayload {
 }
 
 #[derive(Default, Debug)]
-pub struct Store(pub Mutex<InnerStore>);
+pub struct AppState {
+  pub file_name: String,
+  pub label: String,
+  pub log_names: Vec<String>,
+  pub active_log_name: String,
+  pub file_label: String,
+
+  pub cols: Vec<Col>,
+
+  pub parsing_percent: f32,
+  pub loading: bool,
+}
+
+pub struct Store {
+  pub state: RwLock<AppState>,
+}
 
 impl Store {
-  fn publish(&self) {}
+  pub fn new() -> Self {
+    Self {
+      state: RwLock::new(AppState::default()),
+    }
+  }
+  // pulish to local and remote
+  pub fn publish(&self, data: PubData, app_handle: &AppHandle) {
+    use PubData::*;
+    let mut s = self.state.write().unwrap();
+    let pub_type = match data.clone() {
+      ColumnMeta { cols } => {
+        s.cols = cols;
+        PubTypes::ColumnMeta
+      }
+      Progress { parsing_percent } => {
+        s.parsing_percent = parsing_percent;
+        PubTypes::Progress
+      }
+    };
 
-  fn set() {}
+    app_handle
+      .emit_all("state-update", PubPayload { pub_type, data })
+      .expect("Failed to pub app state.");
+  }
+
+  pub fn get(&self, pub_type: PubTypes) -> PubData {
+      use PubTypes::*;
+      match pub_type {
+          ColumnMeta => {
+              PubData::ColumnMeta {
+                  cols: self.state.read().unwrap().cols.clone(),
+              }
+          },
+          Progress => {
+              PubData::Progress {
+                  parsing_percent: self.state.read().unwrap().parsing_percent.clone(),
+              }
+          }
+
+      }
+  }
 }
