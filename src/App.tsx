@@ -22,7 +22,7 @@ export const AppToaster = Toaster.create({
   position: Position.TOP,
 });
 
-function subToState<T>(pub_key: string, initial_value: T) {
+export function useDBState<T>(pub_key: string, initial_value: T) {
   const [state, setState] = useState<T>(initial_value);
   useEffect(() => {
     const unlisten = listen('state-update', event => {
@@ -46,8 +46,7 @@ function App() {
   const [recentFiles] = useState<
     Array<[string, File]>
   >([]);
-  const { parsing_percent } = subToState('Progress', { parsing_percent: 0 });
-  subToState('ColumnMeta', undefined);
+  const { parsing_percent } = useDBState('Progress', { parsing_percent: 0 });
   const [recentMenuOpen, setRecentMenuOpen] = useState(false);
   const handleSelect = useCallback(async () => {
     let filePath = await dialog.open({
