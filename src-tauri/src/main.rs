@@ -85,7 +85,7 @@ fn insert_line(conn: &Connection, entry: String) -> Result<usize> {
 fn read_columns(conn: &Connection) -> Result<Vec<Col>> {
   let mut stmt = conn.prepare(
         "SELECT json_each.key AS key,
-            json_each.type AS type, 
+            CASE json_each.type WHEN 'integer' THEN 'real' ELSE type END AS merged_type, 
             CASE json_each.type WHEN 'text' THEN group_concat(distinct json_each.value) ELSE '' END AS vals,
             CASE json_each.type WHEN 'array' THEN true WHEN 'object' THEN true ELSE false END AS is_json,
             CASE json_each.type WHEN 'text' THEN may_is_datetime(json_each.value) ELSE false END AS is_datetime,
@@ -100,18 +100,24 @@ fn read_columns(conn: &Connection) -> Result<Vec<Col>> {
                 WHEN 'text' THEN parse_to_ts_ify(json_each.value)
                 ELSE 0 END) AS min_val
         FROM log, json_each(log.entry) 
-        GROUP BY key, type;"
+        GROUP BY key, merged_type;"
     )?;
   let mut rows = Vec::new();
   let rows_iter = stmt.query_map([], |row| {
     Ok(Col {
       name: row.get(0)?,
       data_type: row.get(1)?,
-      vals: row.get(2)?,
+      vals: row
+        .get::<usize, String>(2)?
+        .split(",")
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect(),
       is_json: row.get(3)?,
       is_datetime: row.get(4)?,
       max: row.get(5)?,
       min: row.get(6)?,
+      should_select: row.get::<usize, bool>(4)? == true,
     })
   })?;
 
@@ -204,6 +210,8 @@ fn get_state(
   pub_type: PubTypes,
   state: State<Store>,
 ) -> Result<PubData, String> {
+#[tauri::command]
+fn get_state(pub_type: PubTypes, state: State<Store>) -> Result<PubData, String> {
   Ok(state.get(pub_type))
 }
 

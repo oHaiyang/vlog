@@ -1,14 +1,15 @@
 use std::sync::RwLock;
 use strum_macros::Display;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager};
 
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct Col {
   pub name: String,
   pub data_type: String,
-  pub vals: String,
+  pub vals: Vec<String>,
   pub is_datetime: bool,
   pub is_json: bool,
+  pub should_select: bool,
   pub max: f64,
   pub min: f64,
 }
@@ -77,19 +78,14 @@ impl Store {
   }
 
   pub fn get(&self, pub_type: PubTypes) -> PubData {
-      use PubTypes::*;
-      match pub_type {
-          ColumnMeta => {
-              PubData::ColumnMeta {
-                  cols: self.state.read().unwrap().cols.clone(),
-              }
-          },
-          Progress => {
-              PubData::Progress {
-                  parsing_percent: self.state.read().unwrap().parsing_percent.clone(),
-              }
-          }
-
-      }
+    use PubTypes::*;
+    match pub_type {
+      ColumnMeta => PubData::ColumnMeta {
+        cols: self.state.read().unwrap().cols.clone(),
+      },
+      Progress => PubData::Progress {
+        parsing_percent: self.state.read().unwrap().parsing_percent.clone(),
+      },
+    }
   }
 }
