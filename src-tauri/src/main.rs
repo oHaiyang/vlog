@@ -12,7 +12,7 @@ use std::fs::{create_dir_all, File};
 use std::io::{self, BufRead};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use store::{Col, PubData, PubPayload, PubTypes, Store};
+use store::{Col, ColFields, PubData, PubPayload, PubTypes, Store};
 use tauri::{Manager, State};
 
 struct MayIsDatetime();
@@ -106,18 +106,22 @@ fn read_columns(conn: &Connection) -> Result<Vec<Col>> {
   let rows_iter = stmt.query_map([], |row| {
     Ok(Col {
       name: row.get(0)?,
-      data_type: row.get(1)?,
-      vals: row
-        .get::<usize, String>(2)?
-        .split(",")
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
-        .collect(),
-      is_json: row.get(3)?,
-      is_datetime: row.get(4)?,
-      max: row.get(5)?,
-      min: row.get(6)?,
-      should_select: row.get::<usize, bool>(4)? == true,
+      meta: Some(ColFields::Meta {
+        data_type: row.get(1)?,
+        vals: row
+          .get::<usize, String>(2)?
+          .split(",")
+          .filter(|s| !s.is_empty())
+          .map(|s| s.to_string())
+          .collect(),
+        is_json: row.get(3)?,
+        is_datetime: row.get(4)?,
+        max: row.get(5)?,
+        min: row.get(6)?,
+      }),
+      filter: Some(ColFields::Filter {
+        should_select: row.get::<usize, bool>(4)? == true,
+      }),
     })
   })?;
 
@@ -206,10 +210,27 @@ fn parse_file(
 }
 
 #[tauri::command]
-fn get_state(
-  pub_type: PubTypes,
+fn config_select(
+  col_name: String,
+  should_select: bool,
+  app_handle: tauri::AppHandle,
   state: State<Store>,
-) -> Result<PubData, String> {
+) -> Result<(), String> {
+  state.publish(
+    PubData::ColumnMeta {
+      cols: vec![Col {
+        name: col_name,
+        meta: None,
+        filter: Some(ColFields::Filter {
+          should_select: should_select,
+        }),
+      }],
+    },
+    &app_handle,
+  );
+  Ok(())
+}
+
 #[tauri::command]
 fn get_state(pub_type: PubTypes, state: State<Store>) -> Result<PubData, String> {
   Ok(state.get(pub_type))
@@ -225,7 +246,11 @@ fn main() {
 
       Ok(())
     })
-    .invoke_handler(tauri::generate_handler![parse_file, get_state])
+    .invoke_handler(tauri::generate_handler![
+      parse_file,
+      get_state,
+      config_select
+    ])
     .run(tauri::generate_context!())
     .expect("Error while running tauri application");
 }

@@ -2,16 +2,32 @@ use std::sync::RwLock;
 use strum_macros::Display;
 use tauri::{AppHandle, Manager};
 
+struct ColMetaFileds {}
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(untagged)]
+pub enum ColFields {
+  Meta {
+    data_type: String,
+    vals: Vec<String>,
+    is_datetime: bool,
+    is_json: bool,
+    max: f64,
+    min: f64,
+  },
+  Filter {
+    should_select: bool,
+  },
+}
+
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct Col {
   pub name: String,
-  pub data_type: String,
-  pub vals: Vec<String>,
-  pub is_datetime: bool,
-  pub is_json: bool,
-  pub should_select: bool,
-  pub max: f64,
-  pub min: f64,
+
+  #[serde(flatten)]
+  pub meta: Option<ColFields>,
+  #[serde(flatten)]
+  pub filter: Option<ColFields>,
 }
 
 #[derive(Clone, Display, Debug, serde::Serialize, serde::Deserialize)]
@@ -41,6 +57,7 @@ pub struct AppState {
   pub active_log_name: String,
   pub file_label: String,
 
+  // TODO: use hashmap to improve update performance
   pub cols: Vec<Col>,
 
   pub parsing_percent: f32,
@@ -63,7 +80,15 @@ impl Store {
     let mut s = self.state.write().unwrap();
     let pub_type = match data.clone() {
       ColumnMeta { cols } => {
-        s.cols = cols;
+        if s.cols.is_empty() {
+            s.cols = cols;
+        } else {
+            if cols.len() > 0 {
+                for c in s.cols.iter_mut() {
+
+                }
+            }
+        }
         PubTypes::ColumnMeta
       }
       Progress { parsing_percent } => {
