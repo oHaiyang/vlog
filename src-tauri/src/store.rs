@@ -1,14 +1,44 @@
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::RwLock;
 use strum_macros::Display;
 use tauri::{AppHandle, Manager};
 
 struct ColMetaFileds {}
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(untagged)]
+pub enum Condition {
+  NumRange(f64, f64),
+  Select {
+    items: Vec<String>,
+    reverse: bool,
+  },
+  TextMatch {
+    term: String,
+    reverse: bool,
+    case: bool,
+    regex: bool,
+  },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum DataType {
+  #[serde(rename = "bool")]
+  Bool,
+  #[serde(rename = "text")]
+  Text,
+  #[serde(rename = "real")]
+  Real,
+  #[serde(rename = "json")]
+  JSON,
+}
+
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(untagged)]
 pub enum ColFields {
   Meta {
-    data_type: String,
+    data_type: DataType,
     vals: Vec<String>,
     is_datetime: bool,
     is_json: bool,
@@ -17,6 +47,7 @@ pub enum ColFields {
   },
   Filter {
     should_select: bool,
+    condition: Option<Condition>,
   },
 }
 
@@ -81,13 +112,21 @@ impl Store {
     let pub_type = match data.clone() {
       ColumnMeta { cols } => {
         if s.cols.is_empty() {
-            s.cols = cols;
+          s.cols = cols;
         } else {
-            if cols.len() > 0 {
-                for c in s.cols.iter_mut() {
-
-                }
+          let mut cols_map: HashMap<String, Col> =
+            cols.iter().map(|c| (c.name.clone(), c.clone())).collect();
+          for c in s.cols.iter_mut() {
+            if cols_map.contains_key(&c.name) {
+              let next_col = cols_map.get_mut(&c.name).unwrap();
+              if let Some(filter) = next_col.filter.take() {
+                c.filter = Some(filter);
+              }
+              if let Some(meta) = next_col.meta.take() {
+                c.meta = Some(meta);
+              }
             }
+          }
         }
         PubTypes::ColumnMeta
       }

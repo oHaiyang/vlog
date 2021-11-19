@@ -4,6 +4,7 @@
 )]
 
 mod store;
+mod utils;
 
 use chrono::prelude::*;
 use rusqlite::functions::{Aggregate, Context, FunctionFlags};
@@ -12,8 +13,9 @@ use std::fs::{create_dir_all, File};
 use std::io::{self, BufRead};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use store::{Col, ColFields, PubData, PubPayload, PubTypes, Store};
+use store::{Col, ColFields, PubData, Condition, PubTypes, Store};
 use tauri::{Manager, State};
+use utils::normalize_json_each_types;
 
 struct MayIsDatetime();
 
@@ -85,7 +87,7 @@ fn insert_line(conn: &Connection, entry: String) -> Result<usize> {
 fn read_columns(conn: &Connection) -> Result<Vec<Col>> {
   let mut stmt = conn.prepare(
         "SELECT json_each.key AS key,
-            CASE json_each.type WHEN 'integer' THEN 'real' ELSE type END AS merged_type, 
+            group_concat(DISTINCT json_each.type) AS merged_type,
             CASE json_each.type WHEN 'text' THEN group_concat(distinct json_each.value) ELSE '' END AS vals,
             CASE json_each.type WHEN 'array' THEN true WHEN 'object' THEN true ELSE false END AS is_json,
             CASE json_each.type WHEN 'text' THEN may_is_datetime(json_each.value) ELSE false END AS is_datetime,
@@ -100,14 +102,14 @@ fn read_columns(conn: &Connection) -> Result<Vec<Col>> {
                 WHEN 'text' THEN parse_to_ts_ify(json_each.value)
                 ELSE 0 END) AS min_val
         FROM log, json_each(log.entry) 
-        GROUP BY key, merged_type;"
+        GROUP BY key;"
     )?;
   let mut rows = Vec::new();
   let rows_iter = stmt.query_map([], |row| {
     Ok(Col {
       name: row.get(0)?,
       meta: Some(ColFields::Meta {
-        data_type: row.get(1)?,
+        data_type: normalize_json_each_types(row.get(1)?),
         vals: row
           .get::<usize, String>(2)?
           .split(",")
@@ -121,6 +123,7 @@ fn read_columns(conn: &Connection) -> Result<Vec<Col>> {
       }),
       filter: Some(ColFields::Filter {
         should_select: row.get::<usize, bool>(4)? == true,
+        condition: Some(Condition::NumRange(0.0, 1.0)),
       }),
     })
   })?;
@@ -213,6 +216,7 @@ fn parse_file(
 fn config_select(
   col_name: String,
   should_select: bool,
+  condition: Option<Condition>,
   app_handle: tauri::AppHandle,
   state: State<Store>,
 ) -> Result<(), String> {
@@ -223,6 +227,7 @@ fn config_select(
         meta: None,
         filter: Some(ColFields::Filter {
           should_select: should_select,
+          condition,
         }),
       }],
     },

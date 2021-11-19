@@ -1,8 +1,11 @@
 import React from 'react';
 import { FormGroup, Checkbox } from '@blueprintjs/core';
+import { useConfigSelect } from '../../hooks';
 
-function JSONCol(props: { name: string }) {
-  const { name } = props;
+function JSONCol(props: { name: string; shouldSelect: boolean }) {
+  const { name, shouldSelect } = props;
+  const configSelect = useConfigSelect(name);
+
   return (
     <FormGroup
       className="pr-6"
@@ -11,8 +14,8 @@ function JSONCol(props: { name: string }) {
         <Checkbox
           className="mt-0"
           inline={true}
-          onChange={() => {}}
-          checked={false}
+          onChange={() => configSelect(!shouldSelect)}
+          checked={shouldSelect}
         />
       }
     />

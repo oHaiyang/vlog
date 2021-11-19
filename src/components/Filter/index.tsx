@@ -7,8 +7,7 @@ import {
   Classes,
 } from '@blueprintjs/core';
 import { Placement } from '@blueprintjs/popover2';
-import { Col } from '../../typings';
-import { useDBState } from '../../App';
+import { useColsState } from '../../hooks';
 import Datetime from './Datetime';
 import Enum from './Enum';
 import NumRange from './NumRange';
@@ -16,6 +15,7 @@ import cx from 'classnames';
 import HelpTip from '../HelpTip';
 import TextMatch from './TextMatch';
 import JSONItem from './JSONItem';
+import type { SelectCondition } from '../../typings';
 
 type FilterProps = {
   className?: string;
@@ -45,12 +45,15 @@ function Item(props: {
 
 function Filter(props: FilterProps) {
   const [collapsed, setCollapsed] = useState(true);
-  const { cols } = useDBState<{ cols: Array<Col> }>('ColumnMeta', { cols: [] });
+  const cols = useColsState();
   const toggleCollapsed = useCallback(() => {
     setCollapsed(!collapsed);
   }, [collapsed]);
 
-  console.log('[Filter][cols]', cols);
+  console.log(
+    '[Filter][cols]',
+    cols.map((c) => [c.name, c.data_type, c])
+  );
 
   return (
     <section
@@ -110,6 +113,7 @@ function Filter(props: FilterProps) {
                 items={col.vals}
                 name={col.name}
                 shouldSelect={col.should_select}
+                selected={(col.condition as SelectCondition)?.items || []}
               />
             ))}
         </Item>
@@ -119,9 +123,7 @@ function Filter(props: FilterProps) {
           name="数值字段"
         >
           {cols
-            .filter(
-              (col) => col.data_type === 'real' || col.data_type === 'integer'
-            )
+            .filter((col) => col.data_type === 'real')
             .map((col) => (
               <NumRange
                 key={`${col.name}.${col.data_type}`}
@@ -162,7 +164,11 @@ function Filter(props: FilterProps) {
           {cols
             .filter((col) => col.is_json)
             .map((col) => (
-              <JSONItem key={col.name} name={col.name} />
+              <JSONItem
+                key={col.name}
+                name={col.name}
+                shouldSelect={col.should_select}
+              />
             ))}
         </Item>
         <Divider />

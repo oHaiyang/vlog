@@ -1,5 +1,6 @@
 import React from 'react';
 import { NumericInput, FormGroup, Checkbox } from '@blueprintjs/core';
+import { useConfigSelect } from '../../hooks';
 
 function NumRange(props: {
   min: number;
@@ -8,6 +9,8 @@ function NumRange(props: {
   shouldSelect: boolean;
 }) {
   const { min, max, name, shouldSelect } = props;
+  const configSelect = useConfigSelect(name);
+
   return (
     <FormGroup
       key={name}
@@ -18,8 +21,8 @@ function NumRange(props: {
         <Checkbox
           className="mt-0"
           inline={true}
-          onChange={() => {}}
-          checked={false}
+          onChange={() => configSelect(!shouldSelect)}
+          checked={shouldSelect}
         />
       }
     >

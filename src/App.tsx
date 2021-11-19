@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   Card,
   Elevation,
@@ -15,43 +15,19 @@ import { Popover2 } from "@blueprintjs/popover2";
 import { dialog } from '@tauri-apps/api';
 import './App.css';
 import { invoke } from '@tauri-apps/api/tauri'
-import { listen } from '@tauri-apps/api/event'
 import Main from './components/Main';
+import { useAppState } from './hooks';
 
 export const AppToaster = Toaster.create({
   position: Position.TOP,
 });
 
-export function useDBState<T>(pub_key: string, initial_value: T) {
-  const [state, setState] = useState<T>(initial_value);
-  useEffect(() => {
-    const unlisten = listen('state-update', event => {
-      const { payload } = event;
-      const { pub_type, data } = payload as { pub_type: string, data: { [key: string]: T } };
-      if (pub_type === pub_key) {
-        setState(data[pub_key]);
-        console.log('[state-update]', pub_key, event);
-      }
-    });
-
-    (async () => {
-      const data = await invoke<{ [key: string]: T }>('get_state', { pubType: pub_key });
-      setState(data[pub_key]);
-    })();
-
-    return () => {
-      (async () => { const fn = await unlisten; fn(); })();
-    }
-  }, []);
-
-  return state;
-}
 
 function App() {
   const [recentFiles] = useState<
     Array<[string, File]>
   >([]);
-  const { parsing_percent } = useDBState('Progress', { parsing_percent: 0 });
+  const { parsing_percent } = useAppState('Progress', { parsing_percent: 0 });
   const [recentMenuOpen, setRecentMenuOpen] = useState(false);
   const handleSelect = useCallback(async () => {
     let filePath = await dialog.open({
