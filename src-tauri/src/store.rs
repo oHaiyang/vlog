@@ -6,6 +6,15 @@ use tauri::{AppHandle, Manager};
 
 struct ColMetaFileds {}
 
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(untagged)]
+pub enum CellData {
+  Bool(bool),
+  Text(String),
+  Real(f64),
+  JSON(String),
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum Condition {
@@ -90,6 +99,7 @@ pub struct AppState {
 
   // TODO: use hashmap to improve update performance
   pub cols: Vec<Col>,
+  pub rows: HashMap<String, CellData>,
 
   pub parsing_percent: f32,
   pub loading: bool,

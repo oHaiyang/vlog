@@ -7,10 +7,11 @@ import produce from 'immer';
 export function useConfigSelect(col_name: string) {
   const configSelect = useCallback(
     async (should_select: boolean, condition?: Condition) => {
+      console.log('config select condition', condition);
       await invoke('config_select', {
         colName: col_name,
         shouldSelect: should_select,
-        condition
+        condition,
       });
     },
     [col_name]
@@ -83,4 +84,12 @@ export function useColsState() {
   );
 
   return cols;
+}
+
+export function useSelect() {
+  return useCallback(async () => {
+    await invoke('select', {
+      limit: 10,
+    });
+  }, []);
 }

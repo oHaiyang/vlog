@@ -22,6 +22,7 @@ rusqlite = { version = "0.25.3", features = ["functions"] }
 strum = "0.21"
 strum_macros = "0.21"
 chrono = "0.4"
+tinytemplate = "1.2.1"
 
 [features]
 default = [ "custom-protocol" ]

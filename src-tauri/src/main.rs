@@ -13,9 +13,30 @@ use std::fs::{create_dir_all, File};
 use std::io::{self, BufRead};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use store::{Col, ColFields, PubData, Condition, PubTypes, Store};
+use store::{Col, ColFields, Condition, PubData, PubTypes, Store};
 use tauri::{Manager, State};
+use tinytemplate::TinyTemplate;
 use utils::normalize_json_each_types;
+use serde::{Serialize};
+
+static SELECT_TEMP_NAME: &'static str = "select_stmt";
+static SELECT_TEMPLATE: &'static str = "SELECT 
+    {{ for col in cols }}
+    json_extract(entry, '$.{col.name}') AS {col.name} {{ if not @last }} , {{ endif }}
+    {{ endfor }}
+  FROM log
+ LIMIT {limit}";
+
+#[derive(Serialize)]
+struct SelectCol {
+  name: String,
+}
+
+#[derive(Serialize)]
+struct SelectParams {
+  limit: usize,
+  cols: Vec<SelectCol>,
+}
 
 struct MayIsDatetime();
 
@@ -237,6 +258,84 @@ fn config_select(
 }
 
 #[tauri::command]
+fn select(limit: usize, app_handle: tauri::AppHandle, state: State<Store>) -> Result<(), String> {
+  let mut tt = TinyTemplate::new();
+  tt.add_template(SELECT_TEMP_NAME, SELECT_TEMPLATE).expect("Failed to create SQL template");
+
+  let select_params = SelectParams {
+    limit: 10,
+    cols: vec![
+      SelectCol {
+        name: "logTime".to_string(),
+      },
+      SelectCol {
+        name: "uri".to_string(),
+      },
+      SelectCol {
+        name: "dltag".to_string(),
+      },
+    ],
+  };
+
+  let rendered = tt.render(SELECT_TEMP_NAME, &select_params).expect("Failed to render template");
+
+  println!("rendered select statement: {:?}", rendered);
+
+  Ok(())
+  /*
+   let mut stmt = conn.prepare(
+     "SELECT json_extract(entry, '$.logTime') AS logTime,
+        json_extract(entry, '$.uri') AS uri,
+        json_extract(entry, '$.dltag') AS dltag
+   FROM log
+  LIMIT 100",
+   )?;
+   let mut rows = Vec::new();
+   let rows_iter = stmt.query_map([], |row| {
+     Ok(Col {
+       name: row.get(0)?,
+       meta: Some(ColFields::Meta {
+         data_type: normalize_json_each_types(row.get(1)?),
+         vals: row
+           .get::<usize, String>(2)?
+           .split(",")
+           .filter(|s| !s.is_empty())
+           .map(|s| s.to_string())
+           .collect(),
+         is_json: row.get(3)?,
+         is_datetime: row.get(4)?,
+         max: row.get(5)?,
+         min: row.get(6)?,
+       }),
+       filter: Some(ColFields::Filter {
+         should_select: row.get::<usize, bool>(4)? == true,
+         condition: Some(Condition::NumRange(0.0, 1.0)),
+       }),
+     })
+   })?;
+
+   for col in rows_iter {
+     rows.push(col?);
+   }
+
+   state.publish(
+     PubData::ColumnMeta {
+       cols: vec![Col {
+         name: col_name,
+         meta: None,
+         filter: Some(ColFields::Filter {
+           should_select: should_select,
+           condition,
+         }),
+       }],
+     },
+     &app_handle,
+   );
+   Ok(())
+   */
+}
+
+#[tauri::command]
 fn get_state(pub_type: PubTypes, state: State<Store>) -> Result<PubData, String> {
   Ok(state.get(pub_type))
 }
@@ -254,7 +353,8 @@ fn main() {
     .invoke_handler(tauri::generate_handler![
       parse_file,
       get_state,
-      config_select
+      config_select,
+      select
     ])
     .run(tauri::generate_context!())
     .expect("Error while running tauri application");
