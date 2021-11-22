@@ -106,19 +106,19 @@ pub struct AppState {
 }
 
 pub struct Store {
-  pub state: RwLock<AppState>,
+  pub inner: RwLock<AppState>,
 }
 
 impl Store {
   pub fn new() -> Self {
     Self {
-      state: RwLock::new(AppState::default()),
+      inner: RwLock::new(AppState::default()),
     }
   }
   // pulish to local and remote
   pub fn publish(&self, data: PubData, app_handle: &AppHandle) {
     use PubData::*;
-    let mut s = self.state.write().unwrap();
+    let mut s = self.inner.write().unwrap();
     let pub_type = match data.clone() {
       ColumnMeta { cols } => {
         if s.cols.is_empty() {
@@ -155,10 +155,10 @@ impl Store {
     use PubTypes::*;
     match pub_type {
       ColumnMeta => PubData::ColumnMeta {
-        cols: self.state.read().unwrap().cols.clone(),
+        cols: self.inner.read().unwrap().cols.clone(),
       },
       Progress => PubData::Progress {
-        parsing_percent: self.state.read().unwrap().parsing_percent.clone(),
+        parsing_percent: self.inner.read().unwrap().parsing_percent.clone(),
       },
     }
   }

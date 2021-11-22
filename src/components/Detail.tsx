@@ -1,52 +1,31 @@
-import React, {
-  useCallback,
-  useEffect,
-  useState,
-  useRef,
-} from 'react';
-import { Grid, AutoSizer, InfiniteLoader, ScrollSync } from 'react-virtualized';
-import { useAppState, useColsState } from '../hooks';
-import { Col, Row } from '../typings';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
+import { Grid, AutoSizer, ScrollSync } from 'react-virtualized';
+import { useColsState } from '../hooks';
+import { Row } from '../typings';
 import cx from 'classnames';
-import { Text, Intent, Icon, Colors } from '@blueprintjs/core';
+import { Text, Intent, Icon, Colors, Classes } from '@blueprintjs/core';
 import { Tooltip2 } from '@blueprintjs/popover2';
-
-type DetailProps = {
-  className: string;
-  previewingIdx: number;
-};
 
 const rowControlWidth = 24; //px
 
-const Detail: React.FC<DetailProps> = (props) => {
-  const {
-    className,
-    previewingIdx,
-  } = props;
-  const [sliceCursor, setSliceCursor] = useState(200);
+function Detail(props: {
+  className?: string;
+  rows: Row[];
+  selecting: boolean;
+}) {
+  const { className, rows, selecting } = props;
   const [hoveringRowId, setHoverringRowId] = useState<string | null>(null);
   // https://github.com/DefinitelyTyped/DefinitelyTyped/issues/31065#issuecomment-446425911
   const headerGridRef = useRef<Grid | null>(null);
   const gridRef = useRef<Grid | null>(null);
 
-  const cols = useColsState();
-  const lines: Row[] = [];
-  const handleLoadMoreRows = useCallback(async ({ startIndex, stopIndex }) => {
-    setSliceCursor(stopIndex);
-  }, []);
-  const handleIsRowLoaded = useCallback(({ index }) => index < sliceCursor, [
-    sliceCursor,
-  ]);
+  const cols = useColsState(true);
   const refreshGrid = useCallback(() => {
     setTimeout(() => headerGridRef.current?.recomputeGridSize(), 0);
     setTimeout(() => gridRef.current?.recomputeGridSize(), 0);
   }, []);
-  const showPreview = useCallback(
-    (idx: number, dataKey: DataKey) => {},
-    []
-  );
 
-  useEffect(refreshGrid, [lines?.length]);
+  useEffect(refreshGrid, [rows?.length]);
 
   const headerGridCellRenderer = useCallback(
     ({ columnIndex, key, style }) => {
@@ -69,11 +48,10 @@ const Detail: React.FC<DetailProps> = (props) => {
       const liftCol = () => {};
       const lowerCol = () => {};
       const sortTip = true
-        ? sortConfig.asc
+        ? true
           ? 'Switch to DESC'
           : 'Switch to ASC'
         : 'Sort by ASC';
-
 
       return (
         <div
@@ -89,13 +67,7 @@ const Detail: React.FC<DetailProps> = (props) => {
               color={true ? undefined : Colors.GRAY3}
               className="ml-1 cursor-pointer"
               intent={true ? Intent.SUCCESS : Intent.NONE}
-              icon={
-                true
-                  ? sortConfig.asc
-                    ? 'arrow-up'
-                    : 'arrow-down'
-                  : 'arrow-up'
-              }
+              icon={true ? (true ? 'arrow-up' : 'arrow-down') : 'arrow-up'}
             />
           </Tooltip2>
           <Icon
@@ -115,15 +87,20 @@ const Detail: React.FC<DetailProps> = (props) => {
         </div>
       );
     },
-    [cols, sortConfig]
+    [cols]
   );
   const cellRenderer = useCallback(
-    ({ columnIndex, key, rowIndex, style, parent }) => {
-      let child;
+    ({ columnIndex, key, rowIndex, style }) => {
       const col = cols[columnIndex];
       const colKey = col.name;
-      const rowData = lines[rowIndex];
+      const rowData = rows[rowIndex];
       const cellData = rowData[colKey];
+
+      let child = (
+        <Text className={selecting ? Classes.SKELETON : ''} ellipsize>
+          {cellData}
+        </Text>
+      );
 
       if (columnIndex === 0) {
         child = (
@@ -157,7 +134,7 @@ const Detail: React.FC<DetailProps> = (props) => {
         </div>
       );
     },
-    [lines, cols, hoveringRowId, showPreview, previewingIdx]
+    [rows, cols, hoveringRowId, selecting]
   );
 
   return (
@@ -188,48 +165,19 @@ const Detail: React.FC<DetailProps> = (props) => {
             <div className="flex-grow">
               <AutoSizer>
                 {({ width, height }) => (
-                  <InfiniteLoader
-                    loadMoreRows={handleLoadMoreRows}
-                    isRowLoaded={handleIsRowLoaded}
-                    rowCount={lines.length}
-                  >
-                    {({ onRowsRendered, registerChild }) => (
-                      <Grid
-                        ref={(ref) => {
-                          registerChild(ref);
-                          gridRef.current = ref;
-                        }}
-                        width={width}
-                        height={height}
-                        rowCount={lines.length}
-                        estimatedColumnSize={100}
-                        columnCount={cols.length}
-                        columnWidth={() => 20}
-                        onScroll={onScroll}
-                        rowClassName="flex flex-row"
-                        rowHeight={30}
-                        cellRenderer={cellRenderer}
-                        onSectionRendered={({
-                          columnStartIndex,
-                          columnStopIndex,
-                          rowStartIndex,
-                          rowStopIndex,
-                        }) => {
-                          const startIndex =
-                            rowStartIndex * cols.length +
-                            columnStartIndex;
-                          const stopIndex =
-                            rowStopIndex * cols.length +
-                            columnStopIndex;
-
-                          onRowsRendered({
-                            startIndex,
-                            stopIndex,
-                          });
-                        }}
-                      />
-                    )}
-                  </InfiniteLoader>
+                  <Grid
+                    ref={gridRef}
+                    width={width}
+                    height={height}
+                    rowCount={rows.length}
+                    estimatedColumnSize={100}
+                    columnCount={cols.length}
+                    columnWidth={() => 20}
+                    onScroll={onScroll}
+                    rowClassName="flex flex-row"
+                    rowHeight={30}
+                    cellRenderer={cellRenderer}
+                  />
                 )}
               </AutoSizer>
             </div>
@@ -238,7 +186,6 @@ const Detail: React.FC<DetailProps> = (props) => {
       </ScrollSync>
     </div>
   );
-};
+}
 
 export default React.memo(Detail);
-

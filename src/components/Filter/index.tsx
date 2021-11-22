@@ -7,7 +7,7 @@ import {
   Classes,
 } from '@blueprintjs/core';
 import { Placement } from '@blueprintjs/popover2';
-import { useColsState, useSelect } from '../../hooks';
+import { useColsState } from '../../hooks';
 import Datetime from './Datetime';
 import Enum from './Enum';
 import NumRange from './NumRange';
@@ -19,6 +19,7 @@ import type { SelectCondition } from '../../typings';
 
 type FilterProps = {
   className?: string;
+  handleSelect: () => void,
 };
 
 function Item(props: {
@@ -46,7 +47,6 @@ function Item(props: {
 function Filter(props: FilterProps) {
   const [collapsed, setCollapsed] = useState(true);
   const cols = useColsState();
-  const select = useSelect();
   const toggleCollapsed = useCallback(() => {
     setCollapsed(!collapsed);
   }, [collapsed]);
@@ -178,7 +178,7 @@ function Filter(props: FilterProps) {
         <span>{0 ? `共计日志 ${0} 条，筛选出前 ${0} 条` : '...'}</span>
         <ButtonGroup>
           <Button icon="add-to-artifact" text="添加索引列" onClick={() => {}} />
-          <Button icon="search-template" text="筛选" onClick={select} />
+          <Button icon="search-template" text="筛选" onClick={props.handleSelect} />
         </ButtonGroup>
         <Button
           icon={collapsed ? 'double-chevron-up' : 'double-chevron-down'}

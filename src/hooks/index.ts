@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/tauri';
 import { listen } from '@tauri-apps/api/event';
-import { Col, Condition } from '../typings';
+import { Col, Condition, Row } from '../typings';
 import produce from 'immer';
 
 export function useConfigSelect(col_name: string) {
@@ -74,7 +74,7 @@ const colsUpdater =
     });
   };
 
-export function useColsState() {
+export function useColsState(onlyShouldSelect: boolean = false) {
   const { cols } = useAppState<{ cols: Array<Col> }>(
     'ColumnMeta',
     {
@@ -83,13 +83,29 @@ export function useColsState() {
     colsUpdater
   );
 
+  if (onlyShouldSelect) return cols.filter((col) => col.should_select);
   return cols;
 }
 
-export function useSelect() {
-  return useCallback(async () => {
-    await invoke('select', {
-      limit: 10,
-    });
+export function useRows(): [Row[], boolean, () => void] {
+  const [selecting, setSelecting] = useState(false);
+  const [rows, setRows] = useState<Row[]>([]);
+  const select = useCallback(() => {
+    (async () => {
+      setSelecting(true);
+      try {
+        const rows: Row[] = await invoke('select', {
+          limit: 10,
+        });
+        setRows(rows);
+      } catch (error) {
+      } finally {
+        setSelecting(false);
+      }
+    })();
   }, []);
+
+  useEffect(select, []);
+
+  return [rows, selecting, select];
 }

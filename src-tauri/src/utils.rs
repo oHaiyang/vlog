@@ -29,7 +29,7 @@ pub fn normalize_json_each_types(merged_type: String) -> DataType {
   }
 
   if type_set.is_subset(&HashSet::from(JSON_TYPES)) {
-    return DataType::Bool;
+    return DataType::JSON;
   }
 
   return DataType::Text;

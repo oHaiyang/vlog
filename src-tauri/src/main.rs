@@ -9,15 +9,16 @@ mod utils;
 use chrono::prelude::*;
 use rusqlite::functions::{Aggregate, Context, FunctionFlags};
 use rusqlite::{params, Connection, Result};
+use serde::Serialize;
+use std::collections::HashMap;
 use std::fs::{create_dir_all, File};
 use std::io::{self, BufRead};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use store::{Col, ColFields, Condition, PubData, PubTypes, Store};
+use store::{CellData, Col, ColFields, Condition, DataType, PubData, PubTypes, Store};
 use tauri::{Manager, State};
 use tinytemplate::TinyTemplate;
 use utils::normalize_json_each_types;
-use serde::{Serialize};
 
 static SELECT_TEMP_NAME: &'static str = "select_stmt";
 static SELECT_TEMPLATE: &'static str = "SELECT 
@@ -27,9 +28,12 @@ static SELECT_TEMPLATE: &'static str = "SELECT
   FROM log
  LIMIT {limit}";
 
+static mut DB_CONN: Option<Connection> = None;
+
 #[derive(Serialize)]
 struct SelectCol {
   name: String,
+  data_type: DataType,
 }
 
 #[derive(Serialize)]
@@ -65,7 +69,7 @@ impl Aggregate<AtomicBool, bool> for MayIsDatetime {
 }
 
 type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
-fn create_db(db_path: &str) -> Result<Connection> {
+fn create_db(db_path: &str) -> Result<()> {
   let conn = Connection::open(db_path)?;
 
   conn.execute("DROP TABLE IF EXISTS log", [])?;
@@ -98,15 +102,27 @@ fn create_db(db_path: &str) -> Result<Connection> {
     MayIsDatetime(),
   )?;
 
-  Ok(conn)
+  unsafe {
+    DB_CONN.insert(conn);
+  }
+
+  Ok(())
 }
 
-fn insert_line(conn: &Connection, entry: String) -> Result<usize> {
-  conn.execute("INSERT INTO log (entry) VALUES (?1)", params![entry])
+fn insert_line(entry: String) -> Result<usize> {
+  unsafe {
+    if let Some(ref conn) = DB_CONN {
+      return conn.execute("INSERT INTO log (entry) VALUES (?1)", params![entry]);
+    };
+  }
+
+  Ok(0)
 }
 
-fn read_columns(conn: &Connection) -> Result<Vec<Col>> {
-  let mut stmt = conn.prepare(
+fn read_columns() -> Result<Vec<Col>> {
+  unsafe {
+    if let Some(ref conn) = DB_CONN {
+      let mut stmt = conn.prepare(
         "SELECT json_each.key AS key,
             group_concat(DISTINCT json_each.type) AS merged_type,
             CASE json_each.type WHEN 'text' THEN group_concat(distinct json_each.value) ELSE '' END AS vals,
@@ -125,35 +141,39 @@ fn read_columns(conn: &Connection) -> Result<Vec<Col>> {
         FROM log, json_each(log.entry) 
         GROUP BY key;"
     )?;
-  let mut rows = Vec::new();
-  let rows_iter = stmt.query_map([], |row| {
-    Ok(Col {
-      name: row.get(0)?,
-      meta: Some(ColFields::Meta {
-        data_type: normalize_json_each_types(row.get(1)?),
-        vals: row
-          .get::<usize, String>(2)?
-          .split(",")
-          .filter(|s| !s.is_empty())
-          .map(|s| s.to_string())
-          .collect(),
-        is_json: row.get(3)?,
-        is_datetime: row.get(4)?,
-        max: row.get(5)?,
-        min: row.get(6)?,
-      }),
-      filter: Some(ColFields::Filter {
-        should_select: row.get::<usize, bool>(4)? == true,
-        condition: Some(Condition::NumRange(0.0, 1.0)),
-      }),
-    })
-  })?;
+      let mut rows = Vec::new();
+      let rows_iter = stmt.query_map([], |row| {
+        Ok(Col {
+          name: row.get(0)?,
+          meta: Some(ColFields::Meta {
+            data_type: normalize_json_each_types(row.get(1)?),
+            vals: row
+              .get::<usize, String>(2)?
+              .split(",")
+              .filter(|s| !s.is_empty())
+              .map(|s| s.to_string())
+              .collect(),
+            is_json: row.get(3)?,
+            is_datetime: row.get(4)?,
+            max: row.get(5)?,
+            min: row.get(6)?,
+          }),
+          filter: Some(ColFields::Filter {
+            should_select: row.get::<usize, bool>(4)? == true,
+            condition: Some(Condition::NumRange(0.0, 1.0)),
+          }),
+        })
+      })?;
 
-  for col in rows_iter {
-    rows.push(col?);
+      for col in rows_iter {
+        rows.push(col?);
+      }
+
+      return Ok(rows);
+    }
   }
 
-  Ok(rows)
+  Ok(vec![])
 }
 
 fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
@@ -164,11 +184,11 @@ where
   Ok(io::BufReader::new(file).lines())
 }
 
-fn write_entires(file_path: &String, db: &Connection, app_handle: &tauri::AppHandle) -> Result<()> {
+fn write_entires(file_path: &String, app_handle: &tauri::AppHandle) -> Result<()> {
   if let Ok(lines) = read_lines(&file_path) {
     for line in lines {
       if let Ok(entry) = line {
-        insert_line(&db, entry).expect("Failed to insert log lines");
+        insert_line(entry).expect("Failed to insert log lines");
       }
     }
   }
@@ -183,8 +203,8 @@ fn write_entires(file_path: &String, db: &Connection, app_handle: &tauri::AppHan
   Ok(())
 }
 
-fn query_and_send_col_meta(db: &Connection, app_handle: &tauri::AppHandle) {
-  let cols = read_columns(&db).expect("Failed to get column meta");
+fn query_and_send_col_meta(app_handle: &tauri::AppHandle) {
+  let cols = read_columns().expect("Failed to get column meta");
 
   app_handle
     .state::<Store>()
@@ -225,10 +245,10 @@ fn parse_file(
 
   println!("got file_path: {}", file_path);
   let db_path = make_db_path(app_name, &file_path).expect("Failed to make database path.");
-  let db = create_db(db_path.to_str().unwrap()).expect("Failed to open database");
+  create_db(db_path.to_str().unwrap()).expect("Failed to open database");
 
-  write_entires(&file_path, &db, &app_handle).expect("Failed to insert entries.");
-  query_and_send_col_meta(&db, &app_handle);
+  write_entires(&file_path, &app_handle).expect("Failed to insert entries.");
+  query_and_send_col_meta(&app_handle);
 
   Ok(())
 }
@@ -258,81 +278,81 @@ fn config_select(
 }
 
 #[tauri::command]
-fn select(limit: usize, app_handle: tauri::AppHandle, state: State<Store>) -> Result<(), String> {
+fn select(limit: usize, app_handle: tauri::AppHandle, state: State<Store>) -> Result<Vec<HashMap<String, CellData>>, String> {
   let mut tt = TinyTemplate::new();
-  tt.add_template(SELECT_TEMP_NAME, SELECT_TEMPLATE).expect("Failed to create SQL template");
+  tt.add_template(SELECT_TEMP_NAME, SELECT_TEMPLATE)
+    .expect("Failed to create SQL template");
 
+  let select_cols: Vec<SelectCol> = state
+    .inner
+    .read()
+    .unwrap()
+    .cols
+    .iter()
+    .filter_map(|c| {
+        match c.filter {
+            Some(ColFields::Filter { should_select, .. }) if should_select == true => {
+                match &c.meta {
+                    Some(ColFields::Meta { data_type, .. }) => Some(SelectCol {
+                        name: c.name.clone(),
+                        data_type: data_type.clone(),
+                    }),
+                    _ => None,
+                }
+            },
+            _ => None,
+        }
+    })
+    .collect();
   let select_params = SelectParams {
-    limit: 10,
-    cols: vec![
-      SelectCol {
-        name: "logTime".to_string(),
-      },
-      SelectCol {
-        name: "uri".to_string(),
-      },
-      SelectCol {
-        name: "dltag".to_string(),
-      },
-    ],
+    limit,
+    cols: select_cols,
   };
 
-  let rendered = tt.render(SELECT_TEMP_NAME, &select_params).expect("Failed to render template");
+  let rendered = tt
+    .render(SELECT_TEMP_NAME, &select_params)
+    .expect("Failed to render template");
 
   println!("rendered select statement: {:?}", rendered);
 
-  Ok(())
-  /*
-   let mut stmt = conn.prepare(
-     "SELECT json_extract(entry, '$.logTime') AS logTime,
-        json_extract(entry, '$.uri') AS uri,
-        json_extract(entry, '$.dltag') AS dltag
-   FROM log
-  LIMIT 100",
-   )?;
-   let mut rows = Vec::new();
-   let rows_iter = stmt.query_map([], |row| {
-     Ok(Col {
-       name: row.get(0)?,
-       meta: Some(ColFields::Meta {
-         data_type: normalize_json_each_types(row.get(1)?),
-         vals: row
-           .get::<usize, String>(2)?
-           .split(",")
-           .filter(|s| !s.is_empty())
-           .map(|s| s.to_string())
-           .collect(),
-         is_json: row.get(3)?,
-         is_datetime: row.get(4)?,
-         max: row.get(5)?,
-         min: row.get(6)?,
-       }),
-       filter: Some(ColFields::Filter {
-         should_select: row.get::<usize, bool>(4)? == true,
-         condition: Some(Condition::NumRange(0.0, 1.0)),
-       }),
-     })
-   })?;
+  return unsafe {
+    if let Some(conn) = &DB_CONN {
+      println!("[SELECT][conn] {:?}", conn);
+      let mut stmt = conn
+        .prepare(&rendered)
+        .map_err(|_e| "Failed to prepare query statement.".to_string())?;
+      println!("[SELECT][stmt] {:?}", stmt);
+      let mut rows: Vec<HashMap<String, CellData>> = Vec::new();
+      let rows_iter = stmt
+        .query_map([], |row| {
+          let mut row_in_hash_map: HashMap<String, CellData> = HashMap::new();
+          for (idx, col) in select_params.cols.iter().enumerate() {
+            let cell_data = match col.data_type {
+              DataType::Text => CellData::Text(row.get::<_, String>(idx)?),
+              DataType::Bool => CellData::Bool(row.get::<_, bool>(idx)?),
+              DataType::Real => CellData::Real(row.get::<_, f64>(idx)?),
+              DataType::JSON => CellData::JSON(row.get::<_, String>(idx)?),
+              _ => CellData::Text(row.get::<_, String>(idx)?),
+            };
+            println!("[SELECTD][CELL]: {:?} = {:?}", col.name, cell_data);
+            row_in_hash_map.insert(col.name.to_string(), cell_data);
+          }
 
-   for col in rows_iter {
-     rows.push(col?);
-   }
+          Ok(row_in_hash_map)
+        })
+        .map_err(|_e| "Failed to query rows from database.".to_string())?;
 
-   state.publish(
-     PubData::ColumnMeta {
-       cols: vec![Col {
-         name: col_name,
-         meta: None,
-         filter: Some(ColFields::Filter {
-           should_select: should_select,
-           condition,
-         }),
-       }],
-     },
-     &app_handle,
-   );
-   Ok(())
-   */
+      for col in rows_iter {
+        rows.push(col.unwrap());
+      }
+
+      println!("[SELECT][rows] {:?}", rows);
+
+      return Ok(rows);
+    }
+
+    Ok(vec![])
+  };
 }
 
 #[tauri::command]
