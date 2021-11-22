@@ -143,7 +143,7 @@ function Detail(props: {
         {({ scrollLeft, onScroll }) => (
           <>
             <div className="flex-shrink-0" style={{ height: 30 }}>
-              <AutoSizer>
+              <AutoSizer disableHeight>
                 {({ width }) => (
                   <Grid
                     ref={headerGridRef}
@@ -154,7 +154,7 @@ function Detail(props: {
                     columnCount={cols.length}
                     width={width}
                     height={30}
-                    columnWidth={() => 20}
+                    columnWidth={400}
                     rowClassName="flex flex-row"
                     rowHeight={30}
                     cellRenderer={headerGridCellRenderer}
@@ -172,7 +172,7 @@ function Detail(props: {
                     rowCount={rows.length}
                     estimatedColumnSize={100}
                     columnCount={cols.length}
-                    columnWidth={() => 20}
+                    columnWidth={400}
                     onScroll={onScroll}
                     rowClassName="flex flex-row"
                     rowHeight={30}

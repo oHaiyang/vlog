@@ -328,11 +328,11 @@ fn select(limit: usize, app_handle: tauri::AppHandle, state: State<Store>) -> Re
           let mut row_in_hash_map: HashMap<String, CellData> = HashMap::new();
           for (idx, col) in select_params.cols.iter().enumerate() {
             let cell_data = match col.data_type {
-              DataType::Text => CellData::Text(row.get::<_, String>(idx)?),
-              DataType::Bool => CellData::Bool(row.get::<_, bool>(idx)?),
-              DataType::Real => CellData::Real(row.get::<_, f64>(idx)?),
-              DataType::JSON => CellData::JSON(row.get::<_, String>(idx)?),
-              _ => CellData::Text(row.get::<_, String>(idx)?),
+              DataType::Text => CellData::Text(row.get::<_, String>(idx).unwrap_or("".to_string())),
+              DataType::Bool => CellData::Bool(row.get::<_, bool>(idx).unwrap_or(false)),
+              DataType::Real => CellData::Real(row.get::<_, f64>(idx).unwrap_or(0.0)),
+              DataType::JSON => CellData::JSON(row.get::<_, String>(idx).unwrap_or("{}".to_string())),
+              _ => CellData::Text(row.get::<_, String>(idx).unwrap_or("".to_string())),
             };
             println!("[SELECTD][CELL]: {:?} = {:?}", col.name, cell_data);
             row_in_hash_map.insert(col.name.to_string(), cell_data);
