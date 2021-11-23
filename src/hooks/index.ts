@@ -1,30 +1,18 @@
 import { useState, useCallback, useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/tauri';
-import { listen } from '@tauri-apps/api/event';
 import { Col, Condition, Row } from '../typings';
 import produce from 'immer';
-import { dialog } from '@tauri-apps/api';
+const { ipcRenderer } = require('electron');
 
 export function useSelectFile() {
   return useCallback(async () => {
-    let filePath = await dialog.open({
-      filters: [
-        {
-          extensions: ['json', 'log', 'zip'],
-          name: 'Log File, Json File',
-        },
-      ],
-    });
-    if (Array.isArray(filePath)) filePath = filePath[0];
-
-    await invoke('parse_file', { filePath });
+    ipcRenderer.send('select-and-parse-file');
   }, []);
 }
 
 export function useConfigSelect(col_name: string) {
   const configSelect = useCallback(
     async (should_select: boolean, condition?: Condition) => {
-      await invoke('config_select', {
+      await ipcRenderer.send('config-select', {
         colName: col_name,
         shouldSelect: should_select,
         condition,
@@ -38,9 +26,7 @@ export function useConfigSelect(col_name: string) {
 
 export function useConfigLimit() {
   const configSelect = useCallback(async (limit: number) => {
-    await invoke('config_limit', {
-      limit: Number(limit) || 0,
-    });
+    await ipcRenderer.send('config-limit', Number(limit) || 0);
   }, []);
 
   return configSelect;
@@ -53,30 +39,24 @@ export function useAppState<T>(
 ) {
   const [state, setState] = useState<T>(initial_value);
   useEffect(() => {
-    const unlisten = listen('state-update', (event) => {
-      const { payload } = event;
+    ipcRenderer.on('state-update', (event: any, payload: any) => {
       const { pub_type, data } = payload as {
         pub_type: string;
         data: { [key: string]: T };
       };
       if (pub_type === pub_key) {
         setState(updater ? updater(data[pub_key]) : data[pub_key]);
-        // console.log('[state-update]', pub_key, event, updater ? updater(data[pub_key]) : data[pub_key]);
       }
     });
 
     (async () => {
-      const data = await invoke<{ [key: string]: T }>('get_state', {
-        pubType: pub_key,
-      });
-      setState(data[pub_key]);
+      const data = await ipcRenderer.invoke('get-state', pub_key);
+      console.log('get-state', data);
+      setState(data);
     })();
 
     return () => {
-      (async () => {
-        const fn = await unlisten;
-        fn();
-      })();
+      ipcRenderer.removeAllListeners('state-update');
     };
   }, []);
 
@@ -95,8 +75,6 @@ const colsUpdater =
           draft.cols.push(col);
         }
       }
-
-      return draft;
     });
   };
 
@@ -114,7 +92,7 @@ export function useColsState(onlyShouldSelect: boolean = false) {
 }
 
 export function useLimitState() {
-  const limit = useAppState<number>('Limit', 50);
+  const { limit } = useAppState<{ limit: number }>('Limit', { limit: 50 });
 
   return limit;
 }
@@ -126,9 +104,8 @@ export function useRows(): [Row[], boolean, () => void] {
     (async () => {
       setSelecting(true);
       try {
-        const rows: Row[] = await invoke('select', {
-          limit: 10,
-        });
+        const rows: Row[] = await ipcRenderer.invoke('select');
+        console.log('selected rows: ', rows)
         setRows(rows);
       } catch (error) {
       } finally {
