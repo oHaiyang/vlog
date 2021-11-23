@@ -12,16 +12,13 @@ import {
   Position,
 } from '@blueprintjs/core';
 import { Popover2 } from "@blueprintjs/popover2";
-import { dialog } from '@tauri-apps/api';
 import './App.css';
-import { invoke } from '@tauri-apps/api/tauri'
 import Main from './components/Main';
-import { useAppState } from './hooks';
+import { useAppState, useSelectFile } from './hooks';
 
 export const AppToaster = Toaster.create({
   position: Position.TOP,
 });
-
 
 function App() {
   const [recentFiles] = useState<
@@ -29,18 +26,7 @@ function App() {
   >([]);
   const { parsing_percent } = useAppState('Progress', { parsing_percent: 0 });
   const [recentMenuOpen, setRecentMenuOpen] = useState(false);
-  const handleSelect = useCallback(async () => {
-    let filePath = await dialog.open({
-      filters: [{
-        extensions: ['json', 'log', 'zip'],
-        name: 'Log File, Json File',
-      }]
-    });
-    if (Array.isArray(filePath)) filePath = filePath[0];
-
-    await invoke('parse_file', { filePath });
-  }, []);
-
+  const handleSelect = useSelectFile();
 
   const recentMenu = (
     <Menu>

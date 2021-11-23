@@ -3,6 +3,23 @@ import { invoke } from '@tauri-apps/api/tauri';
 import { listen } from '@tauri-apps/api/event';
 import { Col, Condition, Row } from '../typings';
 import produce from 'immer';
+import { dialog } from '@tauri-apps/api';
+
+export function useSelectFile() {
+  return useCallback(async () => {
+    let filePath = await dialog.open({
+      filters: [
+        {
+          extensions: ['json', 'log', 'zip'],
+          name: 'Log File, Json File',
+        },
+      ],
+    });
+    if (Array.isArray(filePath)) filePath = filePath[0];
+
+    await invoke('parse_file', { filePath });
+  }, []);
+}
 
 export function useConfigSelect(col_name: string) {
   const configSelect = useCallback(
@@ -20,14 +37,11 @@ export function useConfigSelect(col_name: string) {
 }
 
 export function useConfigLimit() {
-  const configSelect = useCallback(
-    async (limit: number) => {
-      await invoke('config_limit', {
-        limit: Number(limit) || 0,
-      });
-    },
-    []
-  );
+  const configSelect = useCallback(async (limit: number) => {
+    await invoke('config_limit', {
+      limit: Number(limit) || 0,
+    });
+  }, []);
 
   return configSelect;
 }
