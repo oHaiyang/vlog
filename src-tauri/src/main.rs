@@ -278,7 +278,23 @@ fn config_select(
 }
 
 #[tauri::command]
-fn select(limit: usize, app_handle: tauri::AppHandle, state: State<Store>) -> Result<Vec<HashMap<String, CellData>>, String> {
+fn config_limit(
+  limit: usize,
+  app_handle: tauri::AppHandle,
+  state: State<Store>,
+) -> Result<(), String> {
+  state.publish(
+    PubData::Limit(limit),
+    &app_handle,
+  );
+  Ok(())
+}
+
+#[tauri::command]
+fn select(
+  app_handle: tauri::AppHandle,
+  state: State<Store>,
+) -> Result<Vec<HashMap<String, CellData>>, String> {
   let mut tt = TinyTemplate::new();
   tt.add_template(SELECT_TEMP_NAME, SELECT_TEMPLATE)
     .expect("Failed to create SQL template");
@@ -289,24 +305,20 @@ fn select(limit: usize, app_handle: tauri::AppHandle, state: State<Store>) -> Re
     .unwrap()
     .cols
     .iter()
-    .filter_map(|c| {
-        match c.filter {
-            Some(ColFields::Filter { should_select, .. }) if should_select == true => {
-                match &c.meta {
-                    Some(ColFields::Meta { data_type, .. }) => Some(SelectCol {
-                        name: c.name.clone(),
-                        data_type: data_type.clone(),
-                    }),
-                    _ => None,
-                }
-            },
-            _ => None,
-        }
+    .filter_map(|c| match c.filter {
+      Some(ColFields::Filter { should_select, .. }) if should_select == true => match &c.meta {
+        Some(ColFields::Meta { data_type, .. }) => Some(SelectCol {
+          name: c.name.clone(),
+          data_type: data_type.clone(),
+        }),
+        _ => None,
+      },
+      _ => None,
     })
     .collect();
   let select_params = SelectParams {
-    limit,
     cols: select_cols,
+    limit: state.inner.read().unwrap().limit.0,
   };
 
   let rendered = tt
@@ -331,7 +343,9 @@ fn select(limit: usize, app_handle: tauri::AppHandle, state: State<Store>) -> Re
               DataType::Text => CellData::Text(row.get::<_, String>(idx).unwrap_or("".to_string())),
               DataType::Bool => CellData::Bool(row.get::<_, bool>(idx).unwrap_or(false)),
               DataType::Real => CellData::Real(row.get::<_, f64>(idx).unwrap_or(0.0)),
-              DataType::JSON => CellData::JSON(row.get::<_, String>(idx).unwrap_or("{}".to_string())),
+              DataType::JSON => {
+                CellData::JSON(row.get::<_, String>(idx).unwrap_or("{}".to_string()))
+              }
               _ => CellData::Text(row.get::<_, String>(idx).unwrap_or("".to_string())),
             };
             println!("[SELECTD][CELL]: {:?} = {:?}", col.name, cell_data);
@@ -374,6 +388,7 @@ fn main() {
       parse_file,
       get_state,
       config_select,
+      config_limit,
       select
     ])
     .run(tauri::generate_context!())

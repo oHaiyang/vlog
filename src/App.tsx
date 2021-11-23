@@ -38,11 +38,7 @@ function App() {
     });
     if (Array.isArray(filePath)) filePath = filePath[0];
 
-    console.log('filePath: ', filePath);
-
-    const ret = await invoke('parse_file', { filePath });
-
-    console.log('ret: ', ret);
+    await invoke('parse_file', { filePath });
   }, []);
 
 

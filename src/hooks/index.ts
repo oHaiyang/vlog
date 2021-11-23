@@ -7,7 +7,6 @@ import produce from 'immer';
 export function useConfigSelect(col_name: string) {
   const configSelect = useCallback(
     async (should_select: boolean, condition?: Condition) => {
-      console.log('config select condition', condition);
       await invoke('config_select', {
         colName: col_name,
         shouldSelect: should_select,
@@ -15,6 +14,19 @@ export function useConfigSelect(col_name: string) {
       });
     },
     [col_name]
+  );
+
+  return configSelect;
+}
+
+export function useConfigLimit() {
+  const configSelect = useCallback(
+    async (limit: number) => {
+      await invoke('config_limit', {
+        limit: Number(limit) || 0,
+      });
+    },
+    []
   );
 
   return configSelect;
@@ -35,7 +47,7 @@ export function useAppState<T>(
       };
       if (pub_type === pub_key) {
         setState(updater ? updater(data[pub_key]) : data[pub_key]);
-        console.log('[state-update]', pub_key, event);
+        // console.log('[state-update]', pub_key, event, updater ? updater(data[pub_key]) : data[pub_key]);
       }
     });
 
@@ -85,6 +97,12 @@ export function useColsState(onlyShouldSelect: boolean = false) {
 
   if (onlyShouldSelect) return cols.filter((col) => col.should_select);
   return cols;
+}
+
+export function useLimitState() {
+  const limit = useAppState<number>('Limit', 50);
+
+  return limit;
 }
 
 export function useRows(): [Row[], boolean, () => void] {

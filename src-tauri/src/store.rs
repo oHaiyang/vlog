@@ -74,12 +74,14 @@ pub struct Col {
 pub enum PubTypes {
   Progress,
   ColumnMeta,
+  Limit,
 }
 
 #[derive(Clone, serde::Serialize)]
 pub enum PubData {
   Progress { parsing_percent: f32 },
   ColumnMeta { cols: Vec<Col> },
+  Limit(usize),
 }
 
 // the payload type must implement `Serialize`.
@@ -87,6 +89,15 @@ pub enum PubData {
 pub struct PubPayload {
   pub pub_type: PubTypes,
   pub data: PubData,
+}
+
+#[derive(Debug)]
+pub struct SelectLimit(pub usize);
+
+impl Default for SelectLimit {
+  fn default() -> Self {
+    Self(50)
+  }
 }
 
 #[derive(Default, Debug)]
@@ -103,6 +114,7 @@ pub struct AppState {
 
   pub parsing_percent: f32,
   pub loading: bool,
+  pub limit: SelectLimit,
 }
 
 pub struct Store {
@@ -144,6 +156,10 @@ impl Store {
         s.parsing_percent = parsing_percent;
         PubTypes::Progress
       }
+      Limit(limit) => {
+        s.limit = SelectLimit(limit);
+        PubTypes::Limit
+      }
     };
 
     app_handle
@@ -160,6 +176,7 @@ impl Store {
       Progress => PubData::Progress {
         parsing_percent: self.inner.read().unwrap().parsing_percent.clone(),
       },
+      Limit => PubData::Limit(self.inner.read().unwrap().limit.0),
     }
   }
 }

@@ -7,7 +7,7 @@ import {
   Classes,
 } from '@blueprintjs/core';
 import { Placement } from '@blueprintjs/popover2';
-import { useColsState } from '../../hooks';
+import { useColsState, useLimitState, useConfigLimit } from '../../hooks';
 import Datetime from './Datetime';
 import Enum from './Enum';
 import NumRange from './NumRange';
@@ -16,10 +16,11 @@ import HelpTip from '../HelpTip';
 import TextMatch from './TextMatch';
 import JSONItem from './JSONItem';
 import type { SelectCondition } from '../../typings';
+import { throttle } from 'lodash';
 
 type FilterProps = {
   className?: string;
-  handleSelect: () => void,
+  handleSelect: () => void;
 };
 
 function Item(props: {
@@ -45,16 +46,19 @@ function Item(props: {
 }
 
 function Filter(props: FilterProps) {
+  const limit = useLimitState();
+  const configLimit = useConfigLimit();
+  const configLimitDebounced = useCallback(
+    throttle((e) => {
+      configLimit(e.target.value);
+    }, 100),
+    [configLimit]
+  );
   const [collapsed, setCollapsed] = useState(true);
   const cols = useColsState();
   const toggleCollapsed = useCallback(() => {
     setCollapsed(!collapsed);
   }, [collapsed]);
-
-  console.log(
-    '[Filter][cols]',
-    cols.map((c) => [c.name, c.data_type, c])
-  );
 
   return (
     <section
@@ -175,10 +179,32 @@ function Filter(props: FilterProps) {
         <Divider />
       </Collapse>
       <div className="flex justify-between w-full">
-        <span>{0 ? `共计日志 ${0} 条，筛选出前 ${0} 条` : '...'}</span>
+        <span>
+          {limit ? (
+            <>
+              <span>筛选出前 </span>
+              <input
+                className={cx(
+                  Classes.INPUT,
+                  Classes.INTENT_PRIMARY,
+                  'w-16 text-right align-middle'
+                )}
+                value={limit}
+                onChange={configLimitDebounced}
+              />
+              <span> 条日志</span>
+            </>
+          ) : (
+            '...'
+          )}
+        </span>
         <ButtonGroup>
           <Button icon="add-to-artifact" text="添加索引列" onClick={() => {}} />
-          <Button icon="search-template" text="筛选" onClick={props.handleSelect} />
+          <Button
+            icon="search-template"
+            text="筛选"
+            onClick={props.handleSelect}
+          />
         </ButtonGroup>
         <Button
           icon={collapsed ? 'double-chevron-up' : 'double-chevron-down'}

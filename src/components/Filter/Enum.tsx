@@ -30,7 +30,6 @@ function EnumFilter(props: {
   selected: string[];
 }) {
   const { isLoading, items, name, shouldSelect, selected } = props;
-  console.log('[EnumFilter][selected]', selected);
   const selectedSet = useMemo(() => new Set(selected), [selected]);
   const configSelect = useConfigSelect(name);
 
